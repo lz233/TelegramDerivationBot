@@ -1,2 +1,2 @@
 # TelegramDerivationBot
-[WIP] Telegram Derivation Bot
+[WIP] Telegram 求导验证 Bot
