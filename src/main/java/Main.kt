@@ -29,7 +29,7 @@ fun main(args: Array<String>) {
     bot = bot {
         token = args[0]
         logLevel = LogLevel.Error
-        proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved("127.0.0.1", 7890))
+        proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("127.0.0.1", 7890))
         dispatch {
             newChatMembers {
                 newChatMembers.forEach {
@@ -47,11 +47,11 @@ fun main(args: Array<String>) {
                         } else {
                             bot.deleteMessage(chatId = ChatId.fromId(message.chat.id), messageId = message.messageId)
                             bot.deleteMessage(
-                                chatId = ChatId.fromId(message.chat.id),
-                                messageId = it["messageId"] as Long
+                                    chatId = ChatId.fromId(message.chat.id),
+                                    messageId = it["messageId"] as Long
                             )
                             it["messageId"] =
-                                sendVerificationMessage(message.from!!, message.chat, userText = message.text)
+                                    sendVerificationMessage(message.from!!, message.chat, userText = message.text)
                         }
                     }
                 }
@@ -66,8 +66,8 @@ fun main(args: Array<String>) {
                             bot.sendMessage(chatId = ChatId.fromId(callbackQuery.message!!.chat.id), text = "禁止自娱自乐。")
                         "banByAdmin" -> if (isAdmin(callbackQuery.from, callbackQuery.message!!.chat))
                             bot.kickChatMember(
-                                chatId = ChatId.fromId(callbackDataList[0].toLong()),
-                                userId = callbackDataList[1].toLong()
+                                    chatId = ChatId.fromId(callbackDataList[0].toLong()),
+                                    userId = callbackDataList[1].toLong()
                             )
                         else
                             bot.sendMessage(chatId = ChatId.fromId(callbackQuery.message!!.chat.id), text = "禁止自娱自乐。")
@@ -78,10 +78,10 @@ fun main(args: Array<String>) {
                     }
                 }
             }
-            command("start") {
+            command("ping") {
                 bot.sendMessage(chatId = ChatId.fromId(message.chat.id), text = "Hi There!")
             }
-            command("testbot") {
+            command("testmath") {
                 //bot.sendMessage(ChatId.fromId(message.chat.id),text = message.text!!)
                 message.from?.let { startVerification(it, message.chat) }
             }
@@ -94,12 +94,12 @@ fun startVerification(user: User, chat: Chat) {
     map.putIfAbsent(chat.id, mutableMapOf())
     val expression = generateExpression()
     map[chat.id]?.put(
-        user.id,
-        mutableMapOf(
-            "expression" to expression.first,
-            "answer" to expression.second,
-            "messageId" to sendVerificationMessage(user, chat, expression)
-        )
+            user.id,
+            mutableMapOf(
+                    "expression" to expression.first,
+                    "answer" to expression.second,
+                    "messageId" to sendVerificationMessage(user, chat, expression)
+            )
     )
     println("-------------------------------------------------------------")
     println("用户 ${user.username}(${user.id}) 在 ${chat.title}(${chat.id}) 开始验证")
@@ -123,8 +123,7 @@ fun endVerification(user: User, chat: Chat, userMap: MutableMap<Long, MutableMap
     }
 }
 
-fun endVerification(userId: Long, chatId: Long) =
-    endVerification(User(id = userId, isBot = false, firstName = ""), Chat(id = chatId, type = ""))
+fun endVerification(userId: Long, chatId: Long) = endVerification(User(id = userId, isBot = false, firstName = ""), Chat(id = chatId, type = ""))
 
 fun generateExpression(intRange: IntRange = (1..10)): Pair<String, String> {
     val expression = Expression().apply {
@@ -142,37 +141,34 @@ fun generateExpression(intRange: IntRange = (1..10)): Pair<String, String> {
     return expression.toString() to expression.derivative().toString()
 }
 
-fun sendVerificationMessage(
-    user: User,
-    chat: Chat,
-    expression: Pair<String, String>? = null,
-    userText: String? = null
-): Long {
+fun sendVerificationMessage(user: User, chat: Chat, expression: Pair<String, String>? = null, userText: String? = null): Long {
     val inlineButton = InlineKeyboardMarkup.create(
-        listOf(
-            InlineKeyboardButton.CallbackData(text = "人工通过", callbackData = "${chat.id}:${user.id}@passByAdmin"),
-            InlineKeyboardButton.CallbackData(text = "封禁", callbackData = "${chat.id}:${user.id}@banByAdmin")
-        )
+            listOf(
+                    InlineKeyboardButton.CallbackData(text = "人工通过", callbackData = "${chat.id}:${user.id}@passByAdmin"),
+                    InlineKeyboardButton.CallbackData(text = "封禁", callbackData = "${chat.id}:${user.id}@banByAdmin")
+            )
     )
     return if (expression == null) {
         bot.sendMessage(
-            chatId = ChatId.fromId(chat.id),
-            text = "答案错误${if (userText == null) "" else "：$userText"}\n\n${user.username}，请对以下表达式进行求导：\n${
-                map[chat.id]?.get(user.id)?.get("expression")
-            }",
-            replyMarkup = inlineButton
+                chatId = ChatId.fromId(chat.id),
+                text = "欢迎 ${user.username}\n请对以下表达式进行求导：\n${map[chat.id]?.get(user.id)?.get("expression")}",
+                replyMarkup = inlineButton
         ).first?.body()?.result?.messageId!!
+        /*bot.sendMessage(
+                chatId = ChatId.fromId(chat.id),
+                text = "答案错误${if (userText == null) "" else "：$userText"}\n\n${user.username}，请对以下表达式进行求导：\n${map[chat.id]?.get(user.id)?.get("expression")}",
+                replyMarkup = inlineButton
+        ).first?.body()?.result?.messageId!!*/
     } else {
         bot.sendMessage(
-            chatId = ChatId.fromId(chat.id),
-            text = "欢迎 ${user.username}\n请对以下表达式进行求导：\n${expression.first}",
-            replyMarkup = inlineButton
+                chatId = ChatId.fromId(chat.id),
+                text = "欢迎 ${user.username}\n请对以下表达式进行求导：\n${expression.first}",
+                replyMarkup = inlineButton
         ).first?.body()?.result?.messageId!!
     }
 }
 
-fun isAdmin(user: User, chat: Chat) =
-    bot.getChatAdministrators(ChatId.fromId(chat.id)).getOrDefault(listOf()).any { user.id == it.user.id }
+fun isAdmin(user: User, chat: Chat) = bot.getChatAdministrators(ChatId.fromId(chat.id)).getOrDefault(listOf()).any { user.id == it.user.id }
 
 fun callbackDataToList(string: String) = mutableListOf<String>().apply {
     var i = 0
