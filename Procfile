@@ -1,0 +1,1 @@
+web: java -jar out/artifacts/TelegramDerivationBot_jar/TelegramDerivationBot.jar
