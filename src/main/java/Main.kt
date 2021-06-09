@@ -9,15 +9,22 @@ import com.github.kotlintelegrambot.entities.*
 import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
 import com.github.kotlintelegrambot.entities.keyboard.KeyboardButton
 import com.github.kotlintelegrambot.logging.LogLevel
+import math.Expression
+import math.operator.Times
+import math.term.X
+import math.unaryPlus
+import org.apache.commons.math3.analysis.differentiation.DerivativeStructure
+import org.apache.commons.math3.analysis.polynomials.PolynomialFunction
 import java.net.InetSocketAddress
 import java.net.Proxy
 
 const val botId = 1768638849L
 
 val map = mutableMapOf<Long, MutableMap<Long, MutableMap<String, Any>>>()
+lateinit var bot: Bot
 
 fun main() {
-    val bot = bot {
+    bot = bot {
         token = "1768638849:AAGSqWi4LJaCvIUwdBzYo6xjo9qS-qqtL1U"
         logLevel = LogLevel.All()
         proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved("127.0.0.1", 7890))
@@ -26,19 +33,23 @@ fun main() {
                 newChatMembers.forEach {
                     if (it.id == botId)
                         bot.sendMessage(chatId = ChatId.fromId(message.chat.id), text = "已将 Bot 添加至本群，在授予管理权限后方可使用。")
-                    else {
-                        startVerification(bot, it, message.chat)
-                    }
+                    else
+                        startVerification(it, message.chat)
                 }
             }
             message {
                 map[message.chat.id]?.let { userMap ->
                     userMap[message.from?.id]?.let {
-                        if (it["answer"].toString() == message.text) {
-                            if (it.size == 1) map.remove(message.chat.id) else userMap.remove(message.from?.id)
-                            bot.sendMessage(chatId = ChatId.fromId(message.chat.id), text = "${it["expression"]}${it["answer"]}\n验证通过。")
+                        if (it["answer"] == message.text) {
+                            endVerification(message.from!!, message.chat)
                         } else {
                             bot.deleteMessage(chatId = ChatId.fromId(message.chat.id), messageId = message.messageId)
+                            bot.deleteMessage(
+                                chatId = ChatId.fromId(message.chat.id),
+                                messageId = it["messageId"] as Long
+                            )
+                            it["messageId"] =
+                                sendVerificationMessage(message.from!!, message.chat, userText = message.text)
                         }
                     }
                 }
@@ -46,9 +57,16 @@ fun main() {
             callbackQuery {
                 if (callbackQuery.data.contains('@')) {
                     val callbackDataList = callbackDataToList(callbackQuery.data)
-                    when (callbackQuery.data.substring(callbackQuery.data.lastIndexOf('@')+1)) {
-                        "passByAdmin" -> if (isAdmin(bot, callbackQuery.from, callbackQuery.message!!.chat))
-                        endVerification(bot, User(id = callbackDataList[1].toLong(),isBot = false,firstName = ""), Chat(id = callbackDataList[0].toLong(),type = ""))
+                    when (callbackQuery.data.substring(callbackQuery.data.lastIndexOf('@') + 1)) {
+                        "passByAdmin" -> if (isAdmin(callbackQuery.from, callbackQuery.message!!.chat))
+                            endVerification(callbackDataList[1].toLong(), callbackDataList[0].toLong())
+                        else
+                            bot.sendMessage(chatId = ChatId.fromId(callbackQuery.message!!.chat.id), text = "禁止自娱自乐。")
+                        "banByAdmin" -> if (isAdmin(callbackQuery.from, callbackQuery.message!!.chat))
+                            bot.kickChatMember(
+                                chatId = ChatId.fromId(callbackDataList[0].toLong()),
+                                userId = callbackDataList[1].toLong()
+                            )
                         else
                             bot.sendMessage(chatId = ChatId.fromId(callbackQuery.message!!.chat.id), text = "禁止自娱自乐。")
                     }
@@ -62,56 +80,86 @@ fun main() {
                 bot.sendMessage(chatId = ChatId.fromId(message.chat.id), text = "Hi There!")
             }
             command("testbot") {
-                message.from?.let { startVerification(bot, it, message.chat) }
-            }
-            command("testit") {
-                val inlineKeyboardMarkup = InlineKeyboardMarkup.create(
-                        listOf(InlineKeyboardButton.CallbackData(text = "人工通过", callbackData = "passByAdmin")),
-                        listOf(InlineKeyboardButton.CallbackData(text = "Show alert", callbackData = "showAlert")))
-                bot.sendMessage(chatId = ChatId.fromId(message.chat.id), replyMarkup = inlineKeyboardMarkup,
-                        text = "text")
+                //bot.sendMessage(ChatId.fromId(message.chat.id),text = message.text!!)
+                message.from?.let { startVerification(it, message.chat) }
             }
         }
     }
     bot.startPolling()
 }
 
-fun startVerification(bot: Bot, user: User, chat: Chat) {
+fun startVerification(user: User, chat: Chat) {
     map.putIfAbsent(chat.id, mutableMapOf())
     val expression = generateExpression()
-    map[chat.id]?.put(user.id, mutableMapOf("expression" to expression.first, "answer" to expression.second))
-    bot.sendMessage(chatId = ChatId.fromId(chat.id),
-            text = "欢迎 ${user.username}\n请计算以下表达式：\n${expression.first}",
-            replyMarkup = InlineKeyboardMarkup.create(
-                    listOf(InlineKeyboardButton.CallbackData(text = "人工通过", callbackData = "${chat.id}:${user.id}@passByAdmin"),
-                            InlineKeyboardButton.CallbackData(text = "封禁", callbackData = "233"))))
+    map[chat.id]?.put(
+        user.id,
+        mutableMapOf(
+            "expression" to expression.first,
+            "answer" to expression.second,
+            "messageId" to sendVerificationMessage(user, chat, expression)
+        )
+    )
 }
 
-fun endVerification(bot: Bot, user: User, chat: Chat, userMap: MutableMap<Long, MutableMap<String, Any>>? = map[chat.id]) {
+fun endVerification(user: User, chat: Chat, userMap: MutableMap<Long, MutableMap<String, Any>>? = map[chat.id]) {
     userMap?.get(user.id)?.let {
+        bot.deleteMessage(chatId = ChatId.fromId(chat.id), messageId = it["messageId"] as Long)
         if (it.size == 1) map.remove(chat.id) else userMap.remove(user.id)
-        bot.sendMessage(chatId = ChatId.fromId(chat.id), text = "${it["expression"]}${it["answer"]}\n验证通过。")
+        bot.sendMessage(chatId = ChatId.fromId(chat.id), text = "${it["expression"]}\n=\n${it["answer"]}\n验证通过。")
     }
 }
 
-fun generateExpression(intRange: IntRange = (1..100)): Pair<String, Int> {
-    val a = intRange.random()
-    val b = intRange.random()
-    return "$a+$b=" to a + b
-}
+fun endVerification(userId: Long, chatId: Long) =
+    endVerification(User(id = userId, isBot = false, firstName = ""), Chat(id = chatId, type = ""))
 
-fun generateUsersButton(): List<List<KeyboardButton>> {
-    return listOf(listOf(KeyboardButton("Request contact")), listOf(KeyboardButton("Request contact")))
-}
-
-fun isAdmin(bot: Bot, user: User, chat: Chat): Boolean {
-    return with(user.id) {
-        bot.getChatAdministrators(ChatId.fromId(chat.id)).getOrDefault(listOf()).forEach {
-            if (this == it.user.id) return@with true
+fun generateExpression(intRange: IntRange = (1..10)): Pair<String, String> {
+    val expression = Expression().apply {
+        var canAddOperator = true
+        for (i in intRange) {
+            terms.add(X((-100..100).random(), (0..10).random()))
+            if (((1..100).random() >= 50) and canAddOperator) {
+                operators[i] = Times()
+                canAddOperator = !canAddOperator
+            } else {
+                canAddOperator = !canAddOperator
+            }
         }
-        false
+    }
+    println(expression.derivative().toString())
+    return expression.toString() to expression.derivative().toString()
+}
+
+fun sendVerificationMessage(
+    user: User,
+    chat: Chat,
+    expression: Pair<String, String>? = null,
+    userText: String? = null
+): Long {
+    val inlineButton = InlineKeyboardMarkup.create(
+        listOf(
+            InlineKeyboardButton.CallbackData(text = "人工通过", callbackData = "${chat.id}:${user.id}@passByAdmin"),
+            InlineKeyboardButton.CallbackData(text = "封禁", callbackData = "${chat.id}:${user.id}@banByAdmin")
+        )
+    )
+    return if (expression == null) {
+        bot.sendMessage(
+            chatId = ChatId.fromId(chat.id),
+            text = "答案错误${if (userText == null) "" else "：$userText"}\n请对以下表达式进行求导：\n${
+                map[chat.id]?.get(user.id)?.get("expression")
+            }",
+            replyMarkup = inlineButton
+        ).first?.body()?.result?.messageId!!
+    } else {
+        bot.sendMessage(
+            chatId = ChatId.fromId(chat.id),
+            text = "欢迎 ${user.username}\n请对以下表达式进行求导：\n${expression.first}",
+            replyMarkup = inlineButton
+        ).first?.body()?.result?.messageId!!
     }
 }
+
+fun isAdmin(user: User, chat: Chat) =
+    bot.getChatAdministrators(ChatId.fromId(chat.id)).getOrDefault(listOf()).any { user.id == it.user.id }
 
 fun callbackDataToList(string: String) = mutableListOf<String>().apply {
     var i = 0
