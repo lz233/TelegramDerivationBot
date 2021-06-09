@@ -17,16 +17,18 @@ import org.apache.commons.math3.analysis.differentiation.DerivativeStructure
 import org.apache.commons.math3.analysis.polynomials.PolynomialFunction
 import java.net.InetSocketAddress
 import java.net.Proxy
-
-const val botId = 1768638849L
+import kotlin.properties.Delegates
 
 val map = mutableMapOf<Long, MutableMap<Long, MutableMap<String, Any>>>()
 lateinit var bot: Bot
+var botId by Delegates.notNull<Long>()
 
-fun main() {
+fun main(args: Array<String>) {
+    botId = args[0].substring(0, args[0].indexOf(':') - 1).toLong()
+    println(botId)
     bot = bot {
-        token = "1768638849:AAGSqWi4LJaCvIUwdBzYo6xjo9qS-qqtL1U"
-        logLevel = LogLevel.All()
+        token = args[0]
+        logLevel = LogLevel.Error
         proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved("127.0.0.1", 7890))
         dispatch {
             newChatMembers {
@@ -99,13 +101,25 @@ fun startVerification(user: User, chat: Chat) {
             "messageId" to sendVerificationMessage(user, chat, expression)
         )
     )
+    println("-------------------------------------------------------------")
+    println("用户 ${user.username}(${user.id}) 在 ${chat.title}(${chat.id}) 开始验证")
+    println(expression.first)
+    println(expression.second)
+    println("-------------------------------------------------------------")
+    println()
 }
 
 fun endVerification(user: User, chat: Chat, userMap: MutableMap<Long, MutableMap<String, Any>>? = map[chat.id]) {
     userMap?.get(user.id)?.let {
         bot.deleteMessage(chatId = ChatId.fromId(chat.id), messageId = it["messageId"] as Long)
         if (it.size == 1) map.remove(chat.id) else userMap.remove(user.id)
-        bot.sendMessage(chatId = ChatId.fromId(chat.id), text = "${it["expression"]}\n=\n${it["answer"]}\n验证通过。")
+        bot.sendMessage(chatId = ChatId.fromId(chat.id), text = "${it["expression"]} ==> ${it["answer"]}\n\n验证通过。")
+        println("-------------------------------------------------------------")
+        println("用户 ${user.username}(${user.id}) 在 ${chat.title}(${chat.id}) 结束验证")
+        println(it["expression"])
+        println(it["answer"])
+        println("-------------------------------------------------------------")
+        println()
     }
 }
 
@@ -125,7 +139,6 @@ fun generateExpression(intRange: IntRange = (1..10)): Pair<String, String> {
             }
         }
     }
-    println(expression.derivative().toString())
     return expression.toString() to expression.derivative().toString()
 }
 
@@ -144,7 +157,7 @@ fun sendVerificationMessage(
     return if (expression == null) {
         bot.sendMessage(
             chatId = ChatId.fromId(chat.id),
-            text = "答案错误${if (userText == null) "" else "：$userText"}\n请对以下表达式进行求导：\n${
+            text = "答案错误${if (userText == null) "" else "：$userText"}\n\n${user.username}，请对以下表达式进行求导：\n${
                 map[chat.id]?.get(user.id)?.get("expression")
             }",
             replyMarkup = inlineButton
